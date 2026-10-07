@@ -78,6 +78,7 @@ func TestLifecycle(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				configureElection(t, e)
 				for _, setup := range actions[:i] {
 					if err := setup.run(e); err != nil {
 						t.Fatalf("setup %s: %v", setup.name, err)

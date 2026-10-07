@@ -28,13 +28,14 @@ const (
 
 // Election owns its definition and lifecycle. Use New to construct one;
 // the zero value is uninitialized and cannot configure or transition.
-// An Election requires exclusive access when its lifecycle is changed.
+// An Election requires exclusive access when its configuration or lifecycle is changed.
 type Election struct {
 	id       string
 	title    string
 	opensAt  time.Time
 	closesAt time.Time
 	state    State
+	contests []Contest
 }
 
 // New creates a draft election without normalizing its inputs.
@@ -62,11 +63,25 @@ func (e *Election) ClosesAt() time.Time { return e.closesAt }
 func (e *Election) State() State        { return e.state }
 
 // CanConfigure reports whether ballot-affecting configuration may change.
-// Future configuration operations must enforce this boundary themselves.
+// Configuration operations enforce this boundary themselves.
 func (e *Election) CanConfigure() bool { return e.state == Draft }
 
-// Freeze makes the ballot definition immutable.
-func (e *Election) Freeze() error { return e.transition(Draft, Frozen) }
+// Freeze makes a minimally usable ballot definition immutable.
+// At least one contest is required, with at least one choice in each contest.
+func (e *Election) Freeze() error {
+	if e.state != Draft {
+		return fmt.Errorf("%w: %q -> %q", ErrInvalidTransition, e.state, Frozen)
+	}
+	if len(e.contests) == 0 {
+		return fmt.Errorf("%w: election %q has no contests", ErrNotReadyToFreeze, e.id)
+	}
+	for _, contest := range e.contests {
+		if len(contest.choices) == 0 {
+			return fmt.Errorf("%w: contest %q has no choices", ErrNotReadyToFreeze, contest.id)
+		}
+	}
+	return e.transition(Draft, Frozen)
+}
 
 // Open explicitly opens a frozen election, independent of its schedule.
 func (e *Election) Open() error { return e.transition(Frozen, Open) }
