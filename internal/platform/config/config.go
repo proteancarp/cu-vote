@@ -7,7 +7,8 @@ import (
 const defaultHTTPAddr = ":8080"
 
 type Config struct {
-	HTTPAddr string
+	HTTPAddr    string
+	DatabaseURL string
 }
 
 func Load() Config {
@@ -21,6 +22,7 @@ func Load() Config {
 	}
 
 	return Config{
-		HTTPAddr: addr,
+		HTTPAddr:    addr,
+		DatabaseURL: os.Getenv("DATABASE_URL"),
 	}
 }
