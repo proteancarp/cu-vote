@@ -45,6 +45,18 @@ func TestRepositoryIntegration(t *testing.T) {
 			t.Fatalf("result ID = %q", result.ID)
 		}
 		assertPersistedElection(t, pool, result.ID, command)
+		get, err := application.NewGetElection(repository)
+		if err != nil {
+			t.Fatal(err)
+		}
+		retrieved, err := get.Execute(t.Context(), result.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if retrieved.ID != result.ID || retrieved.Title != command.Title || retrieved.State != election.Draft ||
+			!retrieved.OpensAt.Equal(command.OpensAt) || !retrieved.ClosesAt.Equal(command.ClosesAt) {
+			t.Fatalf("retrieved definition does not match stored election: %+v", retrieved)
+		}
 		// Change every non-ID field, verifying a duplicate never overwrites them.
 		changed := application.CreateElectionCommand{
 			Title: "Replacement", OpensAt: opensAt.Add(24 * time.Hour), ClosesAt: opensAt.Add(25 * time.Hour),
@@ -56,6 +68,20 @@ func TestRepositoryIntegration(t *testing.T) {
 		}
 		assertPersistedElection(t, pool, result.ID, command)
 	})
+	t.Run("all lifecycle states as metadata", func(t *testing.T) {
+		for _, state := range []election.State{election.Draft, election.Frozen, election.Open, election.Closed, election.Finalized} {
+			id := "metadata-" + string(state)
+			_, err := pool.Exec(t.Context(), `INSERT INTO elections (id, title, opens_at, closes_at, state)
+				VALUES ($1, $2, $3, $4, $5)`, id, " Metadata ", time.Unix(0, 0), time.Unix(3600, 0), string(state))
+			if err != nil {
+				t.Fatal(err)
+			}
+			metadata, err := repository.Get(t.Context(), id)
+			if err != nil || metadata.ID != id || metadata.Title != " Metadata " || metadata.State != state {
+				t.Fatalf("Get = %+v, %v; want metadata for %s", metadata, err, state)
+			}
+		}
+	})
 	t.Run("canceled caller context", func(t *testing.T) {
 		e, err := election.New("canceled", "Election", time.Unix(0, 0), time.Unix(3600, 0))
 		if err != nil {
@@ -66,12 +92,35 @@ func TestRepositoryIntegration(t *testing.T) {
 		if err := repository.Create(ctx, *e); !errors.Is(err, context.Canceled) {
 			t.Fatalf("Create error = %v, want context.Canceled", err)
 		}
+		if _, err := repository.Get(ctx, " election-1 "); !errors.Is(err, context.Canceled) {
+			t.Fatalf("Get error = %v, want context.Canceled", err)
+		}
 		var count int
 		if err := pool.QueryRow(t.Context(), "SELECT count(*) FROM elections WHERE id = $1", e.ID()).Scan(&count); err != nil {
 			t.Fatal(err)
 		}
 		if count != 0 {
 			t.Fatal("canceled creation persisted an election")
+		}
+	})
+	t.Run("missing election", func(t *testing.T) {
+		get, err := application.NewGetElection(repository)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := get.Execute(t.Context(), "missing"); !errors.Is(err, application.ErrElectionNotFound) || errors.Is(err, pgx.ErrNoRows) {
+			t.Fatalf("Get error = %v, want ErrElectionNotFound without pgx.ErrNoRows", err)
+		}
+	})
+	t.Run("invalid persisted title", func(t *testing.T) {
+		// The existing SQL schema permits blank titles; metadata validation must reject them.
+		_, err := pool.Exec(t.Context(), `INSERT INTO elections (id, title, opens_at, closes_at, state)
+			VALUES ($1, $2, $3, $4, $5)`, "corrupt", " \t\u2003", time.Unix(0, 0), time.Unix(3600, 0), "DRAFT")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := repository.Get(t.Context(), "corrupt"); !errors.Is(err, election.ErrInvalidTitle) {
+			t.Fatalf("Get error = %v, want ErrInvalidTitle", err)
 		}
 	})
 	t.Run("migration rollback and reapply", func(t *testing.T) {
@@ -82,6 +131,11 @@ func TestRepositoryIntegration(t *testing.T) {
 		}
 		if table != nil {
 			t.Fatal("down migration left elections table present")
+		}
+		metadata, err := repository.Get(t.Context(), "missing-table")
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "42P01" || metadata != (application.GetElectionResult{}) {
+			t.Fatalf("Get = %+v, %v; want empty metadata and undefined-table error", metadata, err)
 		}
 		applyMigration(t, pool, "000001_create_elections.up.sql")
 	})

@@ -13,6 +13,7 @@ var (
 	ErrInvalidTitle      = errors.New("election title must not be blank")
 	ErrInvalidTimeRange  = errors.New("election closing time must be after opening time")
 	ErrInvalidTransition = errors.New("invalid election lifecycle transition")
+	ErrInvalidState      = errors.New("unknown election lifecycle state")
 )
 
 // State identifies a stage of the election lifecycle.
@@ -42,18 +43,39 @@ type Election struct {
 // The caller supplies an ID unique across elections; this package does not
 // maintain a registry or generate identifiers. Times are schedule data only.
 func New(id, title string, opensAt, closesAt time.Time) (*Election, error) {
-	if strings.TrimSpace(id) == "" {
-		return nil, ErrInvalidID
-	}
-	if strings.TrimSpace(title) == "" {
-		return nil, ErrInvalidTitle
-	}
-	if !closesAt.After(opensAt) {
-		return nil, ErrInvalidTimeRange
+	if err := ValidateMetadata(id, title, opensAt, closesAt); err != nil {
+		return nil, err
 	}
 	return &Election{
 		id: id, title: title, opensAt: opensAt, closesAt: closesAt, state: Draft,
 	}, nil
+}
+
+// ValidateMetadata checks the shared ID, title, and schedule rules without
+// constructing an Election or normalizing values. It does not validate state
+// or establish ballot-definition readiness.
+func ValidateMetadata(id, title string, opensAt, closesAt time.Time) error {
+	if strings.TrimSpace(id) == "" {
+		return ErrInvalidID
+	}
+	if strings.TrimSpace(title) == "" {
+		return ErrInvalidTitle
+	}
+	if !closesAt.After(opensAt) {
+		return ErrInvalidTimeRange
+	}
+	return nil
+}
+
+// ParseState validates an exact lifecycle state value without creating or
+// transitioning an Election. Recognizing a state does not establish readiness.
+func ParseState(value string) (State, error) {
+	switch state := State(value); state {
+	case Draft, Frozen, Open, Closed, Finalized:
+		return state, nil
+	default:
+		return "", fmt.Errorf("%w: %q", ErrInvalidState, value)
+	}
 }
 
 func (e *Election) ID() string          { return e.id }

@@ -10,17 +10,17 @@ import (
 	"github.com/proteancarp/cu-vote/internal/election"
 )
 
-// ErrMissingDependency indicates an absent required use-case dependency.
-var ErrMissingDependency = errors.New("missing create election dependency")
+// ErrMissingDependency indicates an absent required election use-case dependency.
+var ErrMissingDependency = errors.New("missing election use-case dependency")
 
 // IDGenerator supplies identifiers without coupling the domain to an ID scheme.
 type IDGenerator interface {
 	NewID() (string, error)
 }
 
-// ElectionRepository persists newly created elections. Create must reject an
-// existing election ID rather than overwrite the stored election.
-type ElectionRepository interface {
+// ElectionCreator persists newly created elections. Create must
+// reject an existing election ID rather than overwrite the stored election.
+type ElectionCreator interface {
 	Create(context.Context, election.Election) error
 }
 
@@ -40,10 +40,10 @@ type CreateElectionResult struct {
 // Construct it with NewCreateElection and non-nil dependency implementations.
 type CreateElection struct {
 	ids        IDGenerator
-	repository ElectionRepository
+	repository ElectionCreator
 }
 
-func NewCreateElection(ids IDGenerator, repository ElectionRepository) (*CreateElection, error) {
+func NewCreateElection(ids IDGenerator, repository ElectionCreator) (*CreateElection, error) {
 	if ids == nil {
 		return nil, fmt.Errorf("%w: ID generator", ErrMissingDependency)
 	}
