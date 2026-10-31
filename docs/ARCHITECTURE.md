@@ -128,6 +128,15 @@ Responsibilities include:
 
 The election module does not authenticate voters and does not store ballots.
 
+The current persistence boundary creates unconfigured draft elections and
+retrieves read-only metadata: identifier, title, schedule, and lifecycle state.
+Creation and retrieval use separate application-owned interfaces. Retrieval
+validates metadata using shared domain rules and the domain state parser, then
+returns an application-owned snapshot, never a mutable Election aggregate.
+Contests and choices are not yet persisted, so retrieval neither loads a ballot
+definition nor establishes freeze readiness. New election construction still
+begins in Draft; normal configuration and lifecycle operations retain their invariants.
+
 ---
 
 ### 4.2 Identity

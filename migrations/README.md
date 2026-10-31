@@ -29,6 +29,16 @@ PostgreSQL makes that statement atomic and the primary key prevents overwrites,
 so no explicit transaction is needed. Duplicate errors retain PostgreSQL SQLSTATE
 `23505` and can be inspected as `*pgconn.PgError` through `errors.As`.
 
+Retrieval uses a parameterized SELECT by ID and returns only an application-owned
+`GetElectionResult` metadata snapshot. Shared `election.ValidateMetadata` rules
+validate the ID, title, and schedule; `election.ParseState` validates the exact
+lifecycle state. Values are preserved without trimming. Missing rows return
+`application.ErrElectionNotFound` rather than exposing `pgx.ErrNoRows`. Invalid
+persisted metadata returns a contextual error wrapping the domain validation
+error; it is never repaired automatically. Retrieval does not construct a mutable
+Election aggregate, load contests or choices, or establish freeze readiness.
+Creation and retrieval have separate application-owned repository contracts.
+
 Rollback of this migration deletes the election table and its contents. Use only
 when that data loss is intended:
 
@@ -50,9 +60,12 @@ go test -count=1 -v ./internal/election/postgres -run Integration
 ```
 
 Each run creates a uniquely named schema, applies the actual up migration there,
-tests Create Election persistence, duplicate rejection without overwriting,
-caller cancellation, and migration rollback/reapplication, then removes that
-schema. No pre-applied migrations are required in the test database.
+tests Create/Get Election persistence, duplicate rejection without overwriting,
+missing IDs, valid lifecycle metadata, invalid persisted titles, caller cancellation,
+database query errors, and migration rollback/reapplication, then removes that
+schema. No pre-applied migrations are required in the test database. Unit tests
+validate corrupt metadata including states and time ranges that the SQL CHECK
+constraints prohibit; the schema is not weakened for these tests.
 
 Without `TEST_DATABASE_URL`, integration tests skip and `go test ./...` requires
 no database. A configured but unreachable database causes a test failure, not a

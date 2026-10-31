@@ -129,7 +129,7 @@ func TestNewCreateElectionRequiresDependencies(t *testing.T) {
 	tests := []struct {
 		name       string
 		ids        application.IDGenerator
-		repository application.ElectionRepository
+		repository application.ElectionCreator
 	}{
 		{"missing ID generator", nil, &stubRepository{}},
 		{"missing repository", &stubIDs{}, nil},

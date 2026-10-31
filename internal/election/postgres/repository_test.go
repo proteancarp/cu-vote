@@ -64,4 +64,7 @@ func TestCreatePreservesCanceledContextWithoutDatabase(t *testing.T) {
 	if err := repository.Create(ctx, election.Election{}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Create error = %v, want context.Canceled", err)
 	}
+	if _, err := repository.Get(ctx, "e-1"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Get error = %v, want context.Canceled", err)
+	}
 }
